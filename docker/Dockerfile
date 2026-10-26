@@ -79,7 +79,7 @@ RUN cargo fetch && \
   cargo build -p risingwave_cmd_all --profile ${CARGO_PROFILE} --features "rw-static-link" --features udf --features datafusion && \
   mkdir -p /risingwave/bin && \
   mv /risingwave/target/${CARGO_PROFILE}/risingwave /risingwave/bin/ && \
-  mv /risingwave/target/${CARGO_PROFILE}/risingwave.dwp /risingwave/bin/ && \
+  { mv /risingwave/target/${CARGO_PROFILE}/risingwave.dwp /risingwave/bin/ || touch /risingwave/bin/risingwave.dwp; } && \
   cp ./target/${CARGO_PROFILE}/build/tikv-jemalloc-sys-*/out/build/bin/jeprof /risingwave/bin/ && \
   chmod +x /risingwave/bin/jeprof && \
   mkdir -p /risingwave/lib/adbc && \
