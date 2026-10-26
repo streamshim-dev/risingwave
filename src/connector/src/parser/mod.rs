@@ -64,6 +64,7 @@ mod config;
 mod csv_parser;
 mod debezium;
 mod json_parser;
+mod kafka_envelope;
 mod maxwell;
 mod mysql;
 pub mod parquet_parser;

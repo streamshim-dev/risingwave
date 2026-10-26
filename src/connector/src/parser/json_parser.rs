@@ -28,7 +28,7 @@ use risingwave_common::catalog::Field;
 use risingwave_connector_codec::JsonSchema;
 
 use super::utils::{bytes_from_url, get_kafka_topic};
-use super::{JsonProperties, SchemaRegistryConfig};
+use super::{JsonProperties, SchemaRegistryConfig, kafka_envelope};
 use crate::error::ConnectorResult;
 use crate::parser::AccessBuilder;
 use crate::parser::unified::AccessImpl;
@@ -67,8 +67,19 @@ impl AccessBuilder for JsonAccessBuilder {
     async fn generate_accessor(
         &mut self,
         payload: Vec<u8>,
-        _: &crate::source::SourceMeta,
+        source_meta: &crate::source::SourceMeta,
     ) -> ConnectorResult<AccessImpl<'_>> {
+        // Records announced as protobuf by the `serializer` Kafka header are
+        // rewritten into the JSON envelope. Everything else is passed through untouched.
+        let payload = match source_meta {
+            crate::source::SourceMeta::Kafka(meta) => kafka_envelope::convert_if_protobuf(
+                payload,
+                meta.header_bytes(kafka_envelope::SERIALIZER_HEADER),
+                meta.header_bytes(kafka_envelope::USER_ENCODING_HEADER),
+            )
+            .context("failed to convert protobuf record to json envelope")?,
+            _ => payload,
+        };
         Ok(AccessImpl::Json(self.generate_json_access(payload)?))
     }
 }

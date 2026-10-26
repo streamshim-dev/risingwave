@@ -40,6 +40,15 @@ impl KafkaMeta {
         )
     }
 
+    /// Raw bytes of the first header named `key`, if present and non-null.
+    pub fn header_bytes(&self, key: &str) -> Option<&[u8]> {
+        self.headers
+            .as_ref()?
+            .iter()
+            .find(|header| header.key == key)
+            .and_then(|header| header.value)
+    }
+
     pub fn extract_header_inner<'a>(
         &'a self,
         inner_field: &str,
