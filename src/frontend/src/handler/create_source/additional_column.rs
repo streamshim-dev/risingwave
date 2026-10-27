@@ -32,13 +32,13 @@ fn check_additional_column_compatibility(
         ))));
     }
 
-    // Payload column only allowed when encode is JSON
+    // Payload column only allowed when encode is JSON or EXTENSIBLE
     if let Some(schema) = format_encode
         && column_def
             .column_type
             .real_value()
             .eq_ignore_ascii_case("payload")
-        && !matches!(schema.row_encode, Encode::Json)
+        && !matches!(schema.row_encode, Encode::Json | Encode::Extensible)
     {
         return Err(RwError::from(ProtocolError(format!(
             "INCLUDE payload is only allowed when using ENCODE JSON, but got ENCODE {:?}",

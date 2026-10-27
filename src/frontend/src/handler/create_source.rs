@@ -500,7 +500,10 @@ example:
 "#,
         format_encode.format,
         format_encode.row_encode,
-        if format_encode.row_encode == Encode::Json || format_encode.row_encode == Encode::Bytes {
+        if matches!(
+            format_encode.row_encode,
+            Encode::Json | Encode::Bytes | Encode::Extensible
+        ) {
             "".to_owned()
         } else {
             " (...)".to_owned()

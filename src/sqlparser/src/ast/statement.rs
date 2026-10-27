@@ -167,6 +167,8 @@ pub enum Encode {
     Native,
     Template,
     Parquet,
+    /// JSON with record-level decoding dispatched on message headers.
+    Extensible,
 }
 
 // TODO: unify with `from_keyword`
@@ -186,6 +188,7 @@ impl fmt::Display for Encode {
                 Encode::None => "NONE",
                 Encode::Parquet => "PARQUET",
                 Encode::Text => "TEXT",
+                Encode::Extensible => "EXTENSIBLE",
             }
         )
     }
@@ -204,8 +207,9 @@ impl Encode {
             "PARQUET" => Encode::Parquet,
             "NATIVE" => Encode::Native,
             "NONE" => Encode::None,
+            "EXTENSIBLE" => Encode::Extensible,
             _ => parser_err!(
-                "expected AVRO | BYTES | CSV | PROTOBUF | JSON | NATIVE | TEMPLATE | PARQUET | NONE after Encode"
+                "expected AVRO | BYTES | CSV | PROTOBUF | JSON | NATIVE | TEMPLATE | PARQUET | EXTENSIBLE | NONE after Encode"
             ),
         })
     }

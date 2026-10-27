@@ -63,6 +63,7 @@ mod chunk_builder;
 mod config;
 mod csv_parser;
 mod debezium;
+mod extensible;
 mod json_parser;
 mod kafka_envelope;
 mod maxwell;

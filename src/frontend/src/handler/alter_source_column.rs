@@ -70,7 +70,7 @@ pub async fn handle_alter_source_column(
             )
             .into());
         }
-        SourceEncode::Json if catalog.info.use_schema_registry => {
+        SourceEncode::Json | SourceEncode::Extensible if catalog.info.use_schema_registry => {
             return Err(ErrorCode::NotSupported(
                 "alter source with schema registry".to_owned(),
                 "try `ALTER SOURCE .. FORMAT .. ENCODE .. (...)` instead".to_owned(),
@@ -83,7 +83,11 @@ pub async fn handle_alter_source_column(
                 "Only source with encode JSON | BYTES | CSV | PARQUET can be altered".into(),
             )));
         }
-        SourceEncode::Json | SourceEncode::Csv | SourceEncode::Bytes | SourceEncode::Parquet => {}
+        SourceEncode::Json
+        | SourceEncode::Extensible
+        | SourceEncode::Csv
+        | SourceEncode::Bytes
+        | SourceEncode::Parquet => {}
     }
 
     let columns = &mut catalog.columns;

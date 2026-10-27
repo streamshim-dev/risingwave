@@ -60,6 +60,9 @@ impl AccessBuilderImpl {
             EncodingProperties::Json(config) => {
                 AccessBuilderImpl::Json(JsonAccessBuilder::new(config)?)
             }
+            EncodingProperties::Extensible(config) => {
+                AccessBuilderImpl::Json(JsonAccessBuilder::new_extensible(config)?)
+            }
             _ => unreachable!(),
         };
         Ok(accessor)

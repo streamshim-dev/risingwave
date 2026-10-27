@@ -63,6 +63,7 @@ impl PlainParser {
 
         let payload_builder = match props.encoding_config {
             EncodingProperties::Json(_)
+            | EncodingProperties::Extensible(_)
             | EncodingProperties::Protobuf(_)
             | EncodingProperties::Avro(_)
             | EncodingProperties::Bytes(_) => {

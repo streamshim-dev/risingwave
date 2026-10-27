@@ -81,6 +81,8 @@ pub enum EncodingProperties {
     Protobuf(ProtobufProperties),
     Csv(CsvProperties),
     Json(JsonProperties),
+    /// Same as `Json`, plus record decoding keyed on message headers.
+    Extensible(JsonProperties),
     MongoJson(MongoProperties),
     Bytes(BytesProperties),
     Parquet(ParquetProperties),
@@ -298,6 +300,19 @@ impl SpecificParserConfig {
                 bigint_unsigned_handling: None,
                 handle_toast_columns: false,
             }),
+            (SourceFormat::Plain, SourceEncode::Extensible) => {
+                EncodingProperties::Extensible(JsonProperties {
+                    use_schema_registry: info.use_schema_registry,
+                    timestamp_handling: None,
+                    timestamptz_handling: format_encode_options_with_secret
+                        .get(TimestamptzHandling::OPTION_KEY)
+                        .map(|value| TimestamptzHandling::from_options(value))
+                        .transpose()?,
+                    time_handling: None,
+                    bigint_unsigned_handling: None,
+                    handle_toast_columns: false,
+                })
+            }
             (SourceFormat::DebeziumMongo, SourceEncode::Json) => {
                 let props = MongoProperties::from(&format_encode_options_with_secret);
                 EncodingProperties::MongoJson(props)

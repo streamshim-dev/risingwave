@@ -283,7 +283,8 @@ async fn bind_columns_from_source_for_non_cdc(
         (
             Format::Plain | Format::Upsert | Format::Maxwell | Format::Canal | Format::Debezium,
             Encode::Json,
-        ) => {
+        )
+        | (Format::Plain, Encode::Extensible) => {
             if matches!(
                 format_encode.format,
                 Format::Plain | Format::Upsert | Format::Debezium
@@ -443,6 +444,7 @@ fn row_encode_to_prost(row_encode: &Encode) -> EncodeType {
         Encode::Parquet => EncodeType::Parquet,
         Encode::None => EncodeType::None,
         Encode::Text => EncodeType::Text,
+        Encode::Extensible => EncodeType::Extensible,
     }
 }
 
@@ -466,7 +468,7 @@ pub fn get_schema_location(
 pub fn schema_has_schema_registry(schema: &FormatEncodeOptions) -> bool {
     match schema.row_encode {
         Encode::Avro | Encode::Protobuf => true,
-        Encode::Json => {
+        Encode::Json | Encode::Extensible => {
             let mut options = WithOptions::try_from(schema.row_options()).unwrap();
             matches!(get_json_schema_location(options.inner_mut()), Ok(Some(_)))
         }

@@ -28,7 +28,7 @@ use risingwave_common::catalog::Field;
 use risingwave_connector_codec::JsonSchema;
 
 use super::utils::{bytes_from_url, get_kafka_topic};
-use super::{JsonProperties, SchemaRegistryConfig, kafka_envelope};
+use super::{JsonProperties, SchemaRegistryConfig, extensible, kafka_envelope};
 use crate::error::ConnectorResult;
 use crate::parser::AccessBuilder;
 use crate::parser::unified::AccessImpl;
@@ -40,6 +40,8 @@ pub struct JsonAccessBuilder {
     value: Option<Vec<u8>>,
     payload_start_idx: usize,
     json_parse_options: JsonParseOptions,
+    /// Whether records are decoded by [`extensible::decode_record`] (`ENCODE EXTENSIBLE`).
+    extensible: bool,
 }
 
 impl JsonAccessBuilder {
@@ -69,6 +71,11 @@ impl AccessBuilder for JsonAccessBuilder {
         payload: Vec<u8>,
         source_meta: &crate::source::SourceMeta,
     ) -> ConnectorResult<AccessImpl<'_>> {
+        if self.extensible {
+            let payload = extensible::decode_record(payload, source_meta)
+                .context("failed to decode extensible record")?;
+            return Ok(AccessImpl::Json(self.generate_json_access(payload)?));
+        }
         // Records announced as protobuf by the `serializer` Kafka header are
         // rewritten into the JSON envelope. Everything else is passed through untouched.
         let payload = match source_meta {
@@ -86,6 +93,15 @@ impl AccessBuilder for JsonAccessBuilder {
 
 impl JsonAccessBuilder {
     pub fn new(config: JsonProperties) -> ConnectorResult<Self> {
+        Self::with_extensible(config, false)
+    }
+
+    /// Builder for `ENCODE EXTENSIBLE`: JSON parsing preceded by header-driven record decoding.
+    pub fn new_extensible(config: JsonProperties) -> ConnectorResult<Self> {
+        Self::with_extensible(config, true)
+    }
+
+    fn with_extensible(config: JsonProperties, extensible: bool) -> ConnectorResult<Self> {
         let mut json_parse_options = JsonParseOptions::DEFAULT;
         if let Some(mode) = config.timestamp_handling {
             json_parse_options.timestamp_handling = mode;
@@ -104,6 +120,7 @@ impl JsonAccessBuilder {
             value: None,
             payload_start_idx: if config.use_schema_registry { 5 } else { 0 },
             json_parse_options,
+            extensible,
         })
     }
 }

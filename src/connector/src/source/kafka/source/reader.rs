@@ -403,12 +403,13 @@ impl KafkaSplitReader {
         let max_chunk_size = self.source_ctx.source_ctrl_opts.chunk_size;
         let mut res = Vec::with_capacity(max_chunk_size);
         // ingest kafka message header can be expensive, do it only when required
-        // JSON sources need the `serializer` / `user-encoding` headers to detect
+        // JSON and EXTENSIBLE sources need the `serializer` / `user-encoding` headers to detect
         // protobuf records, even without an `INCLUDE header` column.
         let require_message_header =
             matches!(
                 self.parser_config.specific.encoding_config,
                 crate::parser::EncodingProperties::Json(_)
+                    | crate::parser::EncodingProperties::Extensible(_)
             ) || self.parser_config.common.rw_columns.iter().any(|col_desc| {
                 matches!(
                     col_desc.additional_column.column_type,
