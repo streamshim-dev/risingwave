@@ -39,9 +39,16 @@ jobs:
           free -g
           df -h /
 
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
       - name: Add swap
         run: |
-          sudo fallocate -l 24G /swapfile
+          sudo swapoff -a
+          sudo rm -f /swapfile
+          sudo fallocate -l 16G /swapfile
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
