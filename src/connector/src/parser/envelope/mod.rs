@@ -47,7 +47,6 @@ use rdkafka::message::Headers as _;
 use risingwave_common::types::{
     DataType, DatumCow, JsonbVal, Scalar as _, ScalarImpl, ScalarRefImpl,
 };
-use serde::Deserialize;
 
 pub use self::heuristic::maybe_decode;
 use super::unified::{Access, AccessError, AccessImpl, AccessResult};
@@ -119,23 +118,22 @@ fn decode_protobuf(payload: &[u8], raw_bytes: bool) -> ConnectorResult<Envelope>
     })
 }
 
-#[derive(Deserialize)]
-struct JsonEnvelope {
-    #[serde(default)]
-    data: Option<serde_json::Value>,
-    #[serde(default)]
-    headers: Option<serde_json::Value>,
-}
-
 fn decode_json(payload: &[u8]) -> ConnectorResult<Envelope> {
-    let envelope: JsonEnvelope =
-        serde_json::from_slice(payload).context("failed to parse json envelope")?;
-    let data = match envelope.data {
+    // Parse as a generic value and require an object: deserializing straight into a struct
+    // would also accept a JSON array whose first element is an object (serde reads structs
+    // from sequences), which silently turns e.g. protobuf bytes with a lost `serializer`
+    // header into a wrong row.
+    let serde_json::Value::Object(mut envelope) =
+        serde_json::from_slice(payload).context("failed to parse json envelope")?
+    else {
+        return Err(anyhow::anyhow!("json envelope must be an object").into());
+    };
+    let data = match envelope.remove("data") {
         None | Some(serde_json::Value::Null) => String::new(),
         Some(serde_json::Value::String(s)) => maybe_decode(s),
         Some(other) => other.to_string(),
     };
-    let headers = match envelope.headers {
+    let headers = match envelope.remove("headers") {
         None | Some(serde_json::Value::Null) => JsonbVal::empty_object(),
         Some(h) => h.into(),
     };

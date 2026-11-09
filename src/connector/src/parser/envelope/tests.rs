@@ -305,6 +305,29 @@ fn json_envelope_malformed_is_an_error() {
 }
 
 #[test]
+fn json_envelope_must_be_an_object() {
+    // Protobuf bytes (0a 20 ...) with a lost `serializer` header: leading 0x0A/0x20 are JSON
+    // whitespace, and the rest is an array whose first element looks like an envelope.
+    let mut lost_header = vec![0x0a, 0x20];
+    lost_header.extend_from_slice(br#"[{"data":"x","headers":{}}]"#);
+    assert!(decode(&lost_header, None, None).is_err());
+    for bad in [
+        &br#"[{"data":"x"}]"#[..],
+        b"[]",
+        b"\"str\"",
+        b"42",
+        b"true",
+        b"null",
+    ] {
+        assert!(
+            decode(bad, None, None).is_err(),
+            "{}",
+            String::from_utf8_lossy(bad)
+        );
+    }
+}
+
+#[test]
 fn empty_value_is_empty_envelope() {
     for ser in [None, Some(&b"protobuf"[..])] {
         let env = decode(b"", ser, None).unwrap();
