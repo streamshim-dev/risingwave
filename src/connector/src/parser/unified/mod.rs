@@ -22,6 +22,7 @@ pub use risingwave_connector_codec::decoder::{Access, AccessError, AccessResult}
 
 use self::bytes::BytesAccess;
 use self::json::JsonAccess;
+use crate::parser::envelope::EnvelopeAccess;
 use crate::parser::unified::debezium::MongoJsonAccess;
 use crate::source::SourceColumnDesc;
 
@@ -38,6 +39,7 @@ pub enum AccessImpl<'a> {
     Protobuf(ProtobufAccess<'a>),
     Json(JsonAccess<'a>),
     MongoJson(MongoJsonAccess<JsonAccess<'a>>),
+    Envelope(EnvelopeAccess),
 }
 
 impl Access for AccessImpl<'_> {
@@ -48,6 +50,7 @@ impl Access for AccessImpl<'_> {
             Self::Protobuf(accessor) => accessor.access(path, type_expected),
             Self::Json(accessor) => accessor.access(path, type_expected),
             Self::MongoJson(accessor) => accessor.access(path, type_expected),
+            Self::Envelope(accessor) => accessor.access(path, type_expected),
         }
     }
 }
