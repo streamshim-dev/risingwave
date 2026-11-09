@@ -1,0 +1,69 @@
+control substitution on
+
+system ok
+rpk topic delete envelope_basic || true
+
+system ok
+rpk topic create envelope_basic -p 1
+
+# 1: JSON envelope, plain data
+system ok
+echo '{"data":"plain","headers":{"h":["v"]}}' | rpk topic produce envelope_basic -f '%v\n'
+
+# 2: JSON envelope, base64 JSON data (decoded)
+system ok
+echo '{"data":"W3siayI6IngifV0=","headers":{}}' | rpk topic produce envelope_basic -f '%v\n'
+
+# 3: protobuf, plaintext, content {"a":1}, headers {h:[v]}
+system ok
+echo '0a077b2261223a317d12080a016812030a0176' | rpk topic produce envelope_basic -f '%v{hex}\n' -H 'serializer=protobuf' -H 'user-encoding=plaintext'
+
+# 4: protobuf, user-encoding base64, content is raw text that looks like base64 JSON (kept)
+system ok
+echo '0a0c65794a68496a6f7866513d3d' | rpk topic produce envelope_basic -f '%v{hex}\n' -H 'serializer=protobuf' -H 'user-encoding=base64'
+
+# 5: unknown serializer: skipped
+system ok
+echo '{"data":"skipped"}' | rpk topic produce envelope_basic -f '%v\n' -H 'serializer=avro'
+
+# 6: malformed protobuf: skipped
+system ok
+echo '0a05' | rpk topic produce envelope_basic -f '%v{hex}\n' -H 'serializer=protobuf'
+
+statement error ENCODE ENVELOPE only accepts
+create source envelope_bad (data varchar, extra int)
+with (
+  ${RISEDEV_KAFKA_WITH_OPTIONS_COMMON},
+  topic = 'envelope_basic')
+format plain encode envelope;
+
+statement ok
+create source envelope_src (data varchar, headers jsonb)
+include offset as kafka_offset
+with (
+  ${RISEDEV_KAFKA_WITH_OPTIONS_COMMON},
+  topic = 'envelope_basic',
+  scan.startup.mode = 'earliest')
+format plain encode envelope;
+
+statement ok
+create materialized view envelope_mv as select * from envelope_src;
+
+sleep 5s
+
+query TT rowsort
+select data, headers::varchar from envelope_mv;
+----
+[{"k":"x"}]	{}
+eyJhIjoxfQ==	{}
+plain	{"h": ["v"]}
+{"a":1}	{"h": ["v"]}
+
+statement ok
+drop materialized view envelope_mv;
+
+statement ok
+drop source envelope_src;
+
+system ok
+rpk topic delete envelope_basic
