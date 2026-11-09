@@ -167,6 +167,8 @@ pub enum Encode {
     Native,
     Template,
     Parquet,
+    /// `{data, headers}` envelope records, JSON or protobuf (fork-only).
+    Envelope,
 }
 
 // TODO: unify with `from_keyword`
@@ -186,6 +188,7 @@ impl fmt::Display for Encode {
                 Encode::None => "NONE",
                 Encode::Parquet => "PARQUET",
                 Encode::Text => "TEXT",
+                Encode::Envelope => "ENVELOPE",
             }
         )
     }
@@ -204,8 +207,9 @@ impl Encode {
             "PARQUET" => Encode::Parquet,
             "NATIVE" => Encode::Native,
             "NONE" => Encode::None,
+            "ENVELOPE" => Encode::Envelope,
             _ => parser_err!(
-                "expected AVRO | BYTES | CSV | PROTOBUF | JSON | NATIVE | TEMPLATE | PARQUET | NONE after Encode"
+                "expected AVRO | BYTES | CSV | PROTOBUF | JSON | NATIVE | TEMPLATE | PARQUET | ENVELOPE | NONE after Encode"
             ),
         })
     }

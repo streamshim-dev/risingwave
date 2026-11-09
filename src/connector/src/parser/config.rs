@@ -84,6 +84,8 @@ pub enum EncodingProperties {
     MongoJson(MongoProperties),
     Bytes(BytesProperties),
     Parquet(ParquetProperties),
+    /// `{data, headers}` envelope records, see `parser/envelope`.
+    Envelope,
     Native,
     /// Encoding can't be specified because the source will determines it. Now only used in Iceberg.
     None,
@@ -305,6 +307,7 @@ impl SpecificParserConfig {
             (SourceFormat::Plain, SourceEncode::Bytes) => {
                 EncodingProperties::Bytes(BytesProperties { column_name: None })
             }
+            (SourceFormat::Plain, SourceEncode::Envelope) => EncodingProperties::Envelope,
             (SourceFormat::Native, SourceEncode::Native) => EncodingProperties::Native,
             (SourceFormat::None, SourceEncode::None) => EncodingProperties::None,
             (format, encode) => {

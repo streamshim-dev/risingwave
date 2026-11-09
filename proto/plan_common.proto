@@ -199,6 +199,10 @@ enum EncodeType {
   ENCODE_TYPE_NONE = 8;
   ENCODE_TYPE_TEXT = 9;
   ENCODE_TYPE_PARQUET = 10;
+  // Fork-only encode. Deliberately far above upstream values: the catalog persists this
+  // number, and upstream keeps appending small ones, so a low value would collide after an
+  // upgrade and silently reinterpret existing sources.
+  ENCODE_TYPE_ENVELOPE = 1001;
 }
 
 enum RowFormatType {

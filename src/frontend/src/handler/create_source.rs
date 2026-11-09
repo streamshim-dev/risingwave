@@ -483,6 +483,24 @@ pub(crate) fn bind_all_columns(
                     err
                 }
             }
+            (Format::Plain, Encode::Envelope) => {
+                for col in &non_generated_sql_defined_columns {
+                    // ok to unwrap `data_type` since it was checked at `bind_sql_columns`
+                    let data_type = bind_data_type(col.data_type.as_ref().unwrap())?;
+                    let ok = match col.name.real_value().as_str() {
+                        "data" => matches!(data_type, DataType::Varchar | DataType::Bytea),
+                        "headers" => data_type == DataType::Jsonb,
+                        _ => false,
+                    };
+                    if !ok {
+                        return Err(RwError::from(ProtocolError(
+                            "ENCODE ENVELOPE only accepts the columns `data` (VARCHAR or BYTEA) and `headers` (JSONB), plus INCLUDE columns"
+                                .to_owned(),
+                        )));
+                    }
+                }
+                Ok(cols_from_sql)
+            }
             (_, _) => Ok(cols_from_sql),
         }
     }
@@ -500,7 +518,10 @@ example:
 "#,
         format_encode.format,
         format_encode.row_encode,
-        if format_encode.row_encode == Encode::Json || format_encode.row_encode == Encode::Bytes {
+        if matches!(
+            format_encode.row_encode,
+            Encode::Json | Encode::Bytes | Encode::Envelope
+        ) {
             "".to_owned()
         } else {
             " (...)".to_owned()

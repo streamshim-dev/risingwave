@@ -38,7 +38,7 @@ fn check_additional_column_compatibility(
             .column_type
             .real_value()
             .eq_ignore_ascii_case("payload")
-        && !matches!(schema.row_encode, Encode::Json)
+        && !matches!(schema.row_encode, Encode::Json | Encode::Envelope)
     {
         return Err(RwError::from(ProtocolError(format!(
             "INCLUDE payload is only allowed when using ENCODE JSON, but got ENCODE {:?}",
