@@ -5,7 +5,7 @@ on:
     inputs:
       tag:
         description: Image tag
-        default: 3.0.4-envelope
+        default: 3.0.4-1-extended
         required: true
 
 permissions:
