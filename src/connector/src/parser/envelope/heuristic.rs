@@ -1,17 +1,3 @@
-// Copyright 2026 RisingWave Labs
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 //! Cheap detection of base64-wrapped JSON text.
 //!
 //! The function never produces malformed output: when in doubt it returns the input unchanged.
@@ -24,8 +10,9 @@ use base64::engine::general_purpose::STANDARD;
 /// Characters probed before committing to a full decode. A multiple of 4.
 const PROBE_LEN: usize = 20;
 
-/// Returns the decoded text if `s` is standard, padded base64 of UTF-8 text that starts with
-/// `{` or `[` (after optional ASCII whitespace). Otherwise returns `s` unchanged.
+/// Returns the decoded text if `s` is strict standard base64 (alphabet `A-Z a-z 0-9 + /`, `=`
+/// only as padding of the last quadruplet) of UTF-8 text that starts with `{` or `[` (after
+/// optional ASCII whitespace). Otherwise returns `s` unchanged.
 pub fn maybe_decode(s: String) -> String {
     match try_decode(s.as_bytes()) {
         Some(decoded) => decoded,
@@ -34,46 +21,64 @@ pub fn maybe_decode(s: String) -> String {
 }
 
 fn try_decode(bytes: &[u8]) -> Option<String> {
-    let start = bytes.iter().position(|b| !b.is_ascii_whitespace())?;
-    let body = &bytes[start..];
-    // Already JSON (also covers every protobuf content and plain JSON text).
-    if matches!(body[0], b'{' | b'[') {
+    // Strict base64 carries no whitespace, so any leading or trailing whitespace means plain
+    // text. This also covers JSON text with leading whitespace.
+    let (first, last) = (*bytes.first()?, *bytes.last()?);
+    if first.is_ascii_whitespace() || last.is_ascii_whitespace() {
         return None;
     }
-    // Base64 never carries whitespace in our producers; trailing whitespace means plain text.
-    if body.len() < 4 || body.len() % 4 != 0 {
+    // Already JSON (also covers every protobuf content and plain JSON text).
+    if matches!(first, b'{' | b'[') {
+        return None;
+    }
+    // Whole quadruplets only, and the last one must be `****`, `***=` or `**==`.
+    if bytes.len() < 4 || bytes.len() % 4 != 0 || !is_valid_last_quad(&bytes[bytes.len() - 4..]) {
         return None;
     }
 
-    // Probe: decode only the first PROBE_LEN chars into a stack buffer.
-    let probe_len = PROBE_LEN.min(body.len());
-    let probe = &body[..probe_len];
-    if !probe.iter().all(|b| is_b64_alphabet(*b)) {
-        return None;
-    }
-    let mut head = [0u8; PROBE_LEN / 4 * 3];
-    let written = if probe_len == body.len() {
-        // The whole input fits in the probe, so it may end with padding.
-        STANDARD.decode_slice(probe, &mut head).ok()?
-    } else {
-        // Padding can only appear at the very end, never inside the probe.
-        if probe.contains(&b'=') {
+    // Probe: decode only the first PROBE_LEN chars into a stack buffer. Padding can only be in
+    // the last quadruplet, so a probe that stops short of it must not contain `=`.
+    if bytes.len() > PROBE_LEN {
+        let probe = &bytes[..PROBE_LEN];
+        if !probe.iter().all(|b| is_b64_alphabet(*b)) {
             return None;
         }
-        STANDARD.decode_slice(probe, &mut head).ok()?
-    };
-    let first = head[..written].iter().find(|b| !b.is_ascii_whitespace())?;
+        let mut head = [0u8; PROBE_LEN / 4 * 3];
+        let written = STANDARD.decode_slice(probe, &mut head).ok()?;
+        let first = head[..written].iter().find(|b| !b.is_ascii_whitespace())?;
+        if !matches!(first, b'{' | b'[') {
+            return None;
+        }
+    }
+
+    // Full decode, once, into a pre-sized buffer. STANDARD enforces the alphabet and canonical
+    // padding.
+    let mut out = Vec::with_capacity(bytes.len() / 4 * 3);
+    STANDARD.decode_vec(bytes, &mut out).ok()?;
+    // Short inputs skip the probe, so check the decoded start here.
+    let first = out.iter().find(|b| !b.is_ascii_whitespace())?;
     if !matches!(first, b'{' | b'[') {
         return None;
     }
-
-    // Full decode, once, into a pre-sized buffer. STANDARD enforces canonical padding.
-    let mut out = Vec::with_capacity(body.len() / 4 * 3);
-    STANDARD.decode_vec(body, &mut out).ok()?;
     String::from_utf8(out).ok()
 }
 
+/// The last quadruplet of padded base64 is `****`, `***=` or `**==`.
+#[inline]
+fn is_valid_last_quad(quad: &[u8]) -> bool {
+    let [a, b, c, d] = [quad[0], quad[1], quad[2], quad[3]];
+    is_b64_alphabet(a)
+        && is_b64_alphabet(b)
+        && match (c, d) {
+            (b'=', b'=') => true,
+            (b'=', _) => false,
+            (_, b'=') => is_b64_alphabet(c),
+            _ => is_b64_alphabet(c) && is_b64_alphabet(d),
+        }
+}
+
+/// The 64 characters of the standard alphabet, without the padding `=`.
 #[inline]
 fn is_b64_alphabet(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'='
+    b.is_ascii_alphanumeric() || b == b'+' || b == b'/'
 }

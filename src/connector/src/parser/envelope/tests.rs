@@ -1,24 +1,10 @@
-// Copyright 2026 RisingWave Labs
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 use std::time::Instant;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use prost::Message as _;
 use rdkafka::message::{Header, OwnedHeaders};
-use risingwave_common::types::{DataType, JsonbVal, ScalarRefImpl, ToDatumRef};
+use risingwave_common::types::{DataType, JsonbVal, ScalarRefImpl, ToDatumRef, ToText};
 use serde_json::{Value, json};
 
 use super::*;
@@ -124,6 +110,44 @@ fn malformed_base64_is_untouched() {
     // trailing newline (MIME style) is not decoded
     let s = format!("{good}\n");
     assert_eq!(maybe_decode(s.clone()), s);
+}
+
+#[test]
+fn surrounding_whitespace_is_never_base64() {
+    let good = b64(br#"{"a":"some longer json value here"}"#);
+    for s in [
+        format!(" {good}"),
+        format!("{good} "),
+        format!("\n{good}"),
+        format!("{good}\r\n"),
+        " e30=".to_owned(),
+        "e30= ".to_owned(),
+    ] {
+        assert_eq!(maybe_decode(s.clone()), s, "input {s:?}");
+    }
+}
+
+#[test]
+fn padding_only_in_last_quadruplet() {
+    let good = b64(br#"{"a":"some longer json value here"}"#);
+    // `=` in the first positions of the last quadruplet, or in an earlier one
+    for s in [
+        "e30=e30=".to_owned(),
+        "e3=0".to_owned(),
+        "=e30".to_owned(),
+        "e=30".to_owned(),
+        // `**=*` is not a valid last quadruplet
+        format!("{}ab=c", &good[..good.len() - 4]),
+        format!("{}a=bc", &good[..good.len() - 4]),
+        format!("{}=abc", &good[..good.len() - 4]),
+    ] {
+        assert_eq!(maybe_decode(s.clone()), s, "input {s:?}");
+    }
+    // the three valid endings
+    assert_eq!(maybe_decode("e30=".to_owned()), "{}");
+    assert_eq!(maybe_decode(b64(b"{\"a\":1}")), r#"{"a":1}"#);
+    assert_eq!(maybe_decode(b64(b"[1,2]")), "[1,2]");
+    assert_eq!(maybe_decode(b64(b"[12]")), "[12]");
 }
 
 #[test]
