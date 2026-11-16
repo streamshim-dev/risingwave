@@ -37,6 +37,20 @@ with (
   topic = 'envelope_basic')
 format plain encode envelope;
 
+statement error ENCODE ENVELOPE only accepts
+create source envelope_bad (data int, headers jsonb)
+with (
+  ${RISEDEV_KAFKA_WITH_OPTIONS_COMMON},
+  topic = 'envelope_basic')
+format plain encode envelope;
+
+statement error ENCODE ENVELOPE only accepts
+create source envelope_bad (data varchar, headers varchar)
+with (
+  ${RISEDEV_KAFKA_WITH_OPTIONS_COMMON},
+  topic = 'envelope_basic')
+format plain encode envelope;
+
 statement ok
 create source envelope_src (data varchar, headers jsonb)
 include offset as kafka_offset

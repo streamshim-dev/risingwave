@@ -5,13 +5,13 @@
 //!
 //! | record                                   | `data`                                  |
 //! |------------------------------------------|-----------------------------------------|
-//! | JSON envelope (no `serializer` header, or `json`) | `maybe_decode(data)`                |
-//! | protobuf, `user-encoding: base64`        | content as UTF-8 (base64 if not UTF-8)  |
-//! | protobuf, other or no `user-encoding`    | `maybe_decode(content as UTF-8)`        |
+//! | JSON envelope (no `serializer` header, or `json`) | `decode_with_base64_heuristic(data)` |
+//! | protobuf, `user-encoding: base64`        | content as UTF-8                        |
+//! | protobuf, other or no `user-encoding`    | `decode_with_base64_heuristic(content as UTF-8)` |
 //! | empty value                              | `""`, headers `{}`                      |
 //!
-//! Malformed records and unknown `serializer` values are an error, so the row is skipped and
-//! counted as a source error.
+//! Malformed records, content that is not UTF-8 and unknown `serializer` values are an error,
+//! so the row is skipped and counted as a source error.
 //! When a header key repeats, the last value wins.
 //!
 //! This module is self-contained so it can be carried across RisingWave versions; see
@@ -26,15 +26,14 @@ mod tests;
 use std::collections::BTreeMap;
 
 use anyhow::Context as _;
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
 use prost::Message as _;
 use rdkafka::message::Headers as _;
 use risingwave_common::types::{
     DataType, DatumCow, JsonbVal, Scalar as _, ScalarImpl, ScalarRefImpl,
 };
+use serde::Deserialize;
 
-pub use self::heuristic::maybe_decode;
+pub use self::heuristic::decode_with_base64_heuristic;
 use super::unified::{Access, AccessError, AccessImpl, AccessResult};
 use crate::error::ConnectorResult;
 use crate::parser::AccessBuilder;
@@ -54,11 +53,55 @@ pub struct Envelope {
     pub headers: JsonbVal,
 }
 
-/// Decodes one record. `serializer` and `user_encoding` are the raw Kafka header values.
+/// How the envelope is serialized, from the `serializer` Kafka header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Serializer {
+    /// No header, or `json`.
+    #[default]
+    Json,
+    Protobuf,
+}
+
+impl TryFrom<&[u8]> for Serializer {
+    type Error = anyhow::Error;
+
+    fn try_from(header: &[u8]) -> Result<Self, Self::Error> {
+        match header {
+            b"json" => Ok(Self::Json),
+            b"protobuf" => Ok(Self::Protobuf),
+            other => Err(anyhow::anyhow!(
+                "unsupported serializer header: {}",
+                String::from_utf8_lossy(other)
+            )),
+        }
+    }
+}
+
+/// How the producer encoded the user content, from the `user-encoding` Kafka header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum UserEncoding {
+    /// The protobuf `content` holds the user's raw bytes: no base64 detection is needed.
+    Base64,
+    /// `plaintext`, a missing header or anything else. The content may still be base64 text
+    /// written by the user, so it goes through the base64 heuristic.
+    #[default]
+    Other,
+}
+
+impl From<&[u8]> for UserEncoding {
+    fn from(header: &[u8]) -> Self {
+        match header {
+            b"base64" => Self::Base64,
+            _ => Self::Other,
+        }
+    }
+}
+
+/// Decodes one record.
 pub fn decode(
     payload: &[u8],
-    serializer: Option<&[u8]>,
-    user_encoding: Option<&[u8]>,
+    serializer: Serializer,
+    user_encoding: UserEncoding,
 ) -> ConnectorResult<Envelope> {
     if payload.is_empty() {
         return Ok(Envelope {
@@ -67,63 +110,60 @@ pub fn decode(
         });
     }
     match serializer {
-        None | Some(b"json") => decode_json(payload),
-        Some(b"protobuf") => decode_protobuf(payload, user_encoding == Some(b"base64")),
-        Some(other) => Err(anyhow::anyhow!(
-            "unsupported serializer header: {}",
-            String::from_utf8_lossy(other)
-        )
-        .into()),
+        Serializer::Json => decode_json(payload),
+        Serializer::Protobuf => decode_protobuf(payload, user_encoding),
     }
 }
 
-fn decode_protobuf(payload: &[u8], raw_bytes: bool) -> ConnectorResult<Envelope> {
+fn decode_protobuf(payload: &[u8], user_encoding: UserEncoding) -> ConnectorResult<Envelope> {
     let value = wire::Value::decode(payload).context("failed to decode protobuf envelope")?;
-    let data = if raw_bytes {
-        // Content holds the user's raw bytes: expose them as text, or as base64 if not UTF-8
-        // so nothing is lost.
-        match String::from_utf8(value.content) {
-            Ok(text) => text,
-            Err(err) => STANDARD.encode(err.as_bytes()),
-        }
-    } else {
-        maybe_decode(match String::from_utf8(value.content) {
-            Ok(text) => text,
-            Err(err) => String::from_utf8_lossy(err.as_bytes()).into_owned(),
-        })
+    let content =
+        String::from_utf8(value.content).context("protobuf envelope content is not UTF-8")?;
+    let data = match user_encoding {
+        UserEncoding::Base64 => content,
+        UserEncoding::Other => decode_with_base64_heuristic(content),
     };
     let headers: BTreeMap<String, Vec<String>> = value
         .headers
         .into_iter()
         .map(|(k, v)| (k, v.values))
         .collect();
-    let headers = serde_json::to_value(headers).context("failed to convert envelope headers")?;
     Ok(Envelope {
         data,
-        headers: headers.into(),
+        headers: headers_to_jsonb(&headers)?,
     })
 }
 
+/// JSON form of the envelope. Both fields may be missing or `null`.
+#[derive(Deserialize)]
+struct JsonEnvelope {
+    data: Option<String>,
+    headers: Option<BTreeMap<String, Vec<String>>>,
+}
+
 fn decode_json(payload: &[u8]) -> ConnectorResult<Envelope> {
-    // Parse as a generic value and require an object: deserializing straight into a struct
-    // would also accept a JSON array whose first element is an object (serde reads structs
-    // from sequences), which silently turns e.g. protobuf bytes with a lost `serializer`
-    // header into a wrong row.
-    let serde_json::Value::Object(mut envelope) =
-        serde_json::from_slice(payload).context("failed to parse json envelope")?
-    else {
+    // serde reads structs from JSON arrays too (as positional fields), which would silently turn
+    // e.g. protobuf bytes with a lost `serializer` header into a wrong row.
+    if payload.iter().find(|b| !b.is_ascii_whitespace()) != Some(&b'{') {
         return Err(anyhow::anyhow!("json envelope must be an object").into());
-    };
-    let data = match envelope.remove("data") {
-        None | Some(serde_json::Value::Null) => String::new(),
-        Some(serde_json::Value::String(s)) => maybe_decode(s),
-        Some(other) => other.to_string(),
-    };
-    let headers = match envelope.remove("headers") {
-        None | Some(serde_json::Value::Null) => JsonbVal::empty_object(),
-        Some(h) => h.into(),
-    };
-    Ok(Envelope { data, headers })
+    }
+    let envelope: JsonEnvelope =
+        serde_json::from_slice(payload).context("failed to parse json envelope")?;
+    Ok(Envelope {
+        data: envelope
+            .data
+            .map(decode_with_base64_heuristic)
+            .unwrap_or_default(),
+        headers: match envelope.headers {
+            Some(headers) => headers_to_jsonb(&headers)?,
+            None => JsonbVal::empty_object(),
+        },
+    })
+}
+
+fn headers_to_jsonb(headers: &BTreeMap<String, Vec<String>>) -> ConnectorResult<JsonbVal> {
+    let value = serde_json::to_value(headers).context("failed to convert envelope headers")?;
+    Ok(value.into())
 }
 
 /// Value of the last header named `key`, like Java's `Headers::lastHeader`.
@@ -145,14 +185,19 @@ impl EnvelopeAccessBuilder {
     }
 
     pub fn decode_record(payload: &[u8], meta: &SourceMeta) -> ConnectorResult<Envelope> {
-        match meta {
-            SourceMeta::Kafka(kafka) => decode(
-                payload,
-                last_header(kafka, SERIALIZER_HEADER),
-                last_header(kafka, USER_ENCODING_HEADER),
+        let (serializer, user_encoding) = match meta {
+            SourceMeta::Kafka(kafka) => (
+                last_header(kafka, SERIALIZER_HEADER)
+                    .map(Serializer::try_from)
+                    .transpose()?
+                    .unwrap_or_default(),
+                last_header(kafka, USER_ENCODING_HEADER)
+                    .map(UserEncoding::from)
+                    .unwrap_or_default(),
             ),
-            _ => decode(payload, None, None),
-        }
+            _ => Default::default(),
+        };
+        decode(payload, serializer, user_encoding)
     }
 }
 
