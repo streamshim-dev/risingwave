@@ -24,8 +24,8 @@ pub fn decode_with_base64_heuristic(s: String) -> String {
 }
 
 fn try_decode(bytes: &[u8]) -> Option<String> {
-    // Whole quadruplets only.
-    if bytes.len() < 4 || bytes.len() % 4 != 0 {
+    // Whole quadruplets only, and the last one must be `****`, `***=` or `**==`.
+    if bytes.len() < 4 || bytes.len() % 4 != 0 || !is_valid_last_quad(&bytes[bytes.len() - 4..]) {
         return None;
     }
     // Fail fast on the first characters. Padding can only be in the last quadruplet, so when the
@@ -38,6 +38,20 @@ fn try_decode(bytes: &[u8]) -> Option<String> {
     let mut out = Vec::with_capacity(bytes.len() / 4 * 3);
     STANDARD.decode_vec(bytes, &mut out).ok()?;
     String::from_utf8(out).ok()
+}
+
+/// The last quadruplet of padded base64 is `****`, `***=` or `**==`.
+#[inline]
+fn is_valid_last_quad(quad: &[u8]) -> bool {
+    let [a, b, c, d] = [quad[0], quad[1], quad[2], quad[3]];
+    is_b64_alphabet(a)
+        && is_b64_alphabet(b)
+        && match (c, d) {
+            (b'=', b'=') => true,
+            (b'=', _) => false,
+            (_, b'=') => is_b64_alphabet(c),
+            _ => is_b64_alphabet(c) && is_b64_alphabet(d),
+        }
 }
 
 /// The 64 characters of the standard alphabet, without the padding `=`.
