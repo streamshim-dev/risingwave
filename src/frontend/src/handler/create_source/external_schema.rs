@@ -172,6 +172,7 @@ async fn bind_columns_from_source_for_non_cdc(
     let columns = match (&format_encode.format, &format_encode.row_encode) {
         (Format::Native, Encode::Native)
         | (Format::Plain, Encode::Bytes)
+        | (Format::Plain, Encode::Envelope)
         | (Format::DebeziumMongo, Encode::Json) => None,
         (Format::Plain, Encode::Protobuf) | (Format::Upsert, Encode::Protobuf) => {
             let (row_schema_location, use_schema_registry) =
@@ -443,6 +444,7 @@ fn row_encode_to_prost(row_encode: &Encode) -> EncodeType {
         Encode::Parquet => EncodeType::Parquet,
         Encode::None => EncodeType::None,
         Encode::Text => EncodeType::Text,
+        Encode::Envelope => EncodeType::Envelope,
     }
 }
 

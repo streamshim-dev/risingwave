@@ -461,6 +461,7 @@ pub enum SourceEncode {
     Json,
     Bytes,
     Parquet,
+    Envelope,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -529,6 +530,9 @@ pub fn extract_source_struct(info: &PbStreamSourceInfo) -> Result<SourceStruct> 
             (SourceFormat::DebeziumMongo, SourceEncode::Json)
         }
         (PbFormatType::Plain, PbEncodeType::Bytes) => (SourceFormat::Plain, SourceEncode::Bytes),
+        (PbFormatType::Plain, PbEncodeType::Envelope) => {
+            (SourceFormat::Plain, SourceEncode::Envelope)
+        }
         (PbFormatType::Upsert, PbEncodeType::Protobuf) => {
             (SourceFormat::Upsert, SourceEncode::Protobuf)
         }

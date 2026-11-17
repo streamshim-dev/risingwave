@@ -83,7 +83,11 @@ pub async fn handle_alter_source_column(
                 "Only source with encode JSON | BYTES | CSV | PARQUET can be altered".into(),
             )));
         }
-        SourceEncode::Json | SourceEncode::Csv | SourceEncode::Bytes | SourceEncode::Parquet => {}
+        SourceEncode::Json
+        | SourceEncode::Csv
+        | SourceEncode::Bytes
+        | SourceEncode::Parquet
+        | SourceEncode::Envelope => {}
     }
 
     let columns = &mut catalog.columns;

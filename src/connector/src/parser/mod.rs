@@ -63,6 +63,7 @@ mod chunk_builder;
 mod config;
 mod csv_parser;
 mod debezium;
+mod envelope;
 mod json_parser;
 mod maxwell;
 mod mysql;

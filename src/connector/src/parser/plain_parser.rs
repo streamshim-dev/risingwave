@@ -65,7 +65,8 @@ impl PlainParser {
             EncodingProperties::Json(_)
             | EncodingProperties::Protobuf(_)
             | EncodingProperties::Avro(_)
-            | EncodingProperties::Bytes(_) => {
+            | EncodingProperties::Bytes(_)
+            | EncodingProperties::Envelope => {
                 AccessBuilderImpl::new_default(props.encoding_config).await?
             }
             _ => bail!("Unsupported encoding for Plain"),

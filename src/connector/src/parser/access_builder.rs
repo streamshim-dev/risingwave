@@ -41,6 +41,7 @@ pub enum AccessBuilderImpl {
     DebeziumAvro(DebeziumAvroAccessBuilder),
     DebeziumJson(DebeziumJsonAccessBuilder),
     DebeziumMongoJson(DebeziumMongoJsonAccessBuilder),
+    Envelope(super::envelope::EnvelopeAccessBuilder),
 }
 
 impl AccessBuilderImpl {
@@ -60,6 +61,9 @@ impl AccessBuilderImpl {
             EncodingProperties::Json(config) => {
                 AccessBuilderImpl::Json(JsonAccessBuilder::new(config)?)
             }
+            EncodingProperties::Envelope => {
+                AccessBuilderImpl::Envelope(super::envelope::EnvelopeAccessBuilder::new())
+            }
             _ => unreachable!(),
         };
         Ok(accessor)
@@ -75,6 +79,7 @@ impl AccessBuilderImpl {
             Self::Protobuf(builder) => builder.generate_accessor(payload, source_meta).await?,
             Self::Json(builder) => builder.generate_accessor(payload, source_meta).await?,
             Self::Bytes(builder) => builder.generate_accessor(payload, source_meta).await?,
+            Self::Envelope(builder) => builder.generate_accessor(payload, source_meta).await?,
             Self::DebeziumAvro(builder) => builder.generate_accessor(payload, source_meta).await?,
             Self::DebeziumJson(builder) => builder.generate_accessor(payload, source_meta).await?,
             Self::DebeziumMongoJson(builder) => {
